@@ -25,7 +25,16 @@
 """
 
 from .header import HEADER_SIZE, QQHeader, parse_header
-from .message import ELEMENT_NAMES, Element, Message, element_name, parse_elements, unwrap_body
+from .message import (
+    ELEMENT_NAMES,
+    Element,
+    Message,
+    decode_elements,
+    element_name,
+    parse_elements,
+    unwrap_bodies,
+    unwrap_body,
+)
 from .orm import Column, Database, DatabaseManager, Model, Query, Table
 from .sqlcipher import (
     DEFAULT_CONFIG,
@@ -77,6 +86,7 @@ __all__ = [
     "ScanReport",
     "Table",
     "apply_wal",
+    "decode_elements",
     "decrypt_file",
     "decrypt_page",
     "decrypt_wal",
@@ -91,6 +101,7 @@ __all__ = [
     "prepare_profile",
     "read_header_and_salt",
     "repair_file",
+    "unwrap_bodies",
     "unwrap_body",
     "verify_file",
     "verify_page",

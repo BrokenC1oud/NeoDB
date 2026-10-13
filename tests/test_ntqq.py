@@ -23,7 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ntqq import header as header_mod
 from ntqq import protobuf, sqlcipher
-from ntqq.reader import unwrap_column
+from ntqq.elements import decode_message_bodies
+from ntqq.reader import unwrap_column, unwrap_columns
 
 # ---------------------------------------------------------------------------
 # protobuf
@@ -335,6 +336,24 @@ class ReaderTests(unittest.TestCase):
         inner = b"\x08\x01"
         wrapped = _field_len(40800, inner)
         self.assertEqual(unwrap_column(wrapped, 40800), inner)
+
+    def test_unwrap_columns_returns_every_segment(self):
+        """一条记录可以有多个同号字段（消息的正文/图片各占一个 40800）。"""
+        wrapped = _field_len(40800, b"one") + _field_len(40800, b"two")
+        self.assertEqual(unwrap_columns(wrapped, 40800), [b"one", b"two"])
+        # 只取第一段的旧接口行为不变
+        self.assertEqual(unwrap_column(wrapped, 40800), b"one")
+
+    def test_decode_message_bodies_merges_segments(self):
+        """多段消息体应合并为一个 MessageBody，元素不能只留第一段。"""
+        first = protobuf.encode_varint((45002 << 3) | 0) + protobuf.encode_varint(1)
+        first += _field_len(45101, "正文".encode())
+        second = protobuf.encode_varint((45002 << 3) | 0) + protobuf.encode_varint(2)
+        second += _field_len(45402, b"a.png")
+        body = decode_message_bodies([first, second])
+        kinds = sorted(element.kind for element in body.elements)
+        self.assertEqual(kinds, ["media", "text"])
+        self.assertIn("正文", body.text())
 
     def test_unwrap_column_falls_back(self):
         raw = b"not-a-wrapper"

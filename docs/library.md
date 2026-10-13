@@ -64,6 +64,25 @@ m.to_dict(raw=True)       # JSON-ready, raw columns as hex
 
 元素种类：`text`、`image`、`file`、`voice`、`video`、`face`、`reply`、`poke`、`gift`、`share`、`ark`、`markdown`、`forward`、`bot_markdown`、`call`、`menu`、`unsupported`。每种元素的 `raw` 都保留完整原始字段；`unsupported` 表示该类型尚无专用解码器（仍会尽量取出可读文本），`menu` 是内嵌按钮菜单（类型 43）。
 
+### 判断元素是否为文本、取它的内容
+
+元素是带类型的：`Element.kind` 就是类型字符串（`element.type_name` 是它的
+别名）。文本元素为 `kind == "text"`，内容在 `content`：
+
+```python
+m.type_name                       # 首个元素的类型；"empty" 表示没有消息体
+for element in m.elements:
+    if element.kind == "text":
+        print(element.content)    # 纯文本；str(element) 等价
+m.text                            # 全部元素拼接（图片等为 "[图片]" 这类占位符）
+m.element("text")                 # 第一个文本元素，没有则 None
+```
+
+一条消息可能由多段组成（正文 + 图片 + 引用…），`Message.elements` 已经包含**全部**
+段；被引用的消息在 `m.quote.quoted.elements`。若想收集"所有可读文本"（例如做词云），
+除了 `kind == "text"` 还可取图片摘要（`Image.summary`）、文件名（`File.filename`）、
+红包/卡片文字（`Gift.title`、`Share.title`、`Ark.summary`）等。
+
 为新类型 id 注册一个解码器只需一次调用：
 
 ```python

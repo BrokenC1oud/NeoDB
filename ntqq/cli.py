@@ -32,7 +32,7 @@ from pathlib import Path
 from . import elements as elements_mod
 from . import header as header_mod
 from . import protobuf, sqlcipher
-from .reader import MessageDatabase, column_name, unwrap_column
+from .reader import MessageDatabase, column_name, unwrap_columns
 
 
 def _key_from_args(args) -> bytes:
@@ -294,16 +294,17 @@ def cmd_dump(args) -> int:
             print(f"msg_id={record.msg_id} table={record.table} time={record.time_str}")
             for key, value in sorted(record.columns.items()):
                 if isinstance(value, (bytes, bytearray)):
-                    inner = unwrap_column(value, key)
                     print(f"--- column {key} ({column_name(key)}) ---")
-                    if inner is None:
-                        continue
-                    try:
-                        fields = protobuf.decode_tree(inner)
-                    except protobuf.ProtobufError:
-                        print(f"    bytes {bytes(value).hex()}")
-                        continue
-                    _print_fields(fields, 1)
+                    segments = unwrap_columns(value, key)
+                    for index, inner in enumerate(segments, 1):
+                        if len(segments) > 1:
+                            print(f"    --- 第 {index}/{len(segments)} 段 ---")
+                        try:
+                            fields = protobuf.decode_tree(inner)
+                        except protobuf.ProtobufError:
+                            print(f"    bytes {bytes(inner).hex()}")
+                            continue
+                        _print_fields(fields, 1)
     return 0
 
 

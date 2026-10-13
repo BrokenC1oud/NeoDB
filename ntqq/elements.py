@@ -33,6 +33,8 @@
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any
@@ -283,12 +285,29 @@ class MessageBody:
         }
 
 
+def decode_message_bodies(bodies: Iterable[bytes]) -> MessageBody:
+    """解码并合并多段消息体。
+
+    一条消息由若干段组成（正文、图片、引用各一段），每段是独立的元素家族，
+    因此必须逐段分组再合并；否则只有第一段能被识别出来。
+    """
+    groups: list[list[Field]] = []
+    for body in bodies:
+        if not body:
+            continue
+        with contextlib.suppress(protobuf.ProtobufError):
+            groups.append(protobuf.decode_tree(body))
+    fields: list[Field] = []
+    elements: list[Element] = []
+    for group in groups:
+        fields.extend(group)
+        elements.extend(_group_elements(group))
+    return MessageBody(fields=fields, elements=elements)
+
+
 def decode_message_body(body: bytes) -> MessageBody:
-    """解码存储在 ``40800`` 列中的内部消息体。"""
-    if not body:
-        return MessageBody(fields=[])
-    fields = protobuf.decode_tree(body)
-    return MessageBody(fields=fields, elements=_group_elements(fields))
+    """解码单段消息体（``40800`` 列中的一份）；多段请用 :func:`decode_message_bodies`。"""
+    return decode_message_bodies([body])
 
 
 def _group_elements(fields: list[Field]) -> list[Element]:
@@ -324,11 +343,15 @@ def _fallback_family(number: int) -> str | None:
 
 
 def _quote_reply(element: Element) -> str:
-    inner = element.get(47423)
-    if inner is None or inner.message is None:
+    groups = [f.message for f in element.fields if f.number == 47423 and f.message is not None]
+    if not groups:
         return "[回复]"
-    quoted = MessageBody(fields=inner.message, elements=_group_elements(inner.message))
-    return "[回复 " + quoted.text() + "]"
+    fields: list[Field] = []
+    elements: list[Element] = []
+    for group in groups:
+        fields.extend(group)
+        elements.extend(_group_elements(group))
+    return "[回复 " + MessageBody(fields=fields, elements=elements).text() + "]"
 
 
 def render_element(element: Element) -> str:

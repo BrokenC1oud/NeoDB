@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import protobuf
-from .elements import MessageBody, decode_message_body
+from .elements import MessageBody, decode_message_bodies
 
 # 存放聊天消息的表。所有表的列布局都相同。
 MESSAGE_TABLES = [
@@ -83,25 +83,31 @@ def column_name(number: int) -> str:
     return COLUMN_NAMES.get(number, f"col_{number}")
 
 
-def unwrap_column(blob: bytes | None, number: int) -> bytes | None:
-    """从列的 blob 中提取内部消息。
+def unwrap_columns(blob: bytes | None, number: int) -> list[bytes]:
+    """从列的 blob 中提取**全部**内部消息。
 
-    QQ 以 ``<field number> = <bytes>`` 的形式存储 protobuf 取值；
-    字段 tag 与列号一致。有些取值是直接原始存储的，
-    因此当包装字段不存在时回退为原始字节。
+    QQ 以 ``<field number> = <bytes>`` 的形式存储 protobuf 取值，字段 tag 与
+    列号一致；一条记录可以有多个同号字段（一条消息的正文、图片、引用各占一个
+    ``40800``），因此这里全部返回。有些取值是直接原始存储的，当包装字段不存在
+    时回退为原始字节。
     """
     if blob is None:
-        return None
+        return []
     if not isinstance(blob, (bytes, bytearray)):
-        return None
+        return []
     try:
         fields = protobuf.parse(bytes(blob))
     except protobuf.ProtobufError:
-        return bytes(blob)
-    inner = protobuf.first(fields, number)
-    if inner is not None and inner.wire_type == protobuf.WIRE_LEN:
-        return inner.value
-    return bytes(blob)
+        return [bytes(blob)]
+    inner = [f.value for f in fields if f.number == number and f.wire_type == protobuf.WIRE_LEN]
+    return inner or [bytes(blob)]
+
+
+def unwrap_column(blob: bytes | None, number: int) -> bytes | None:
+    """只取第一段（需要全部分段请用 :func:`unwrap_columns`）。"""
+    if blob is None or not isinstance(blob, (bytes, bytearray)):
+        return None
+    return unwrap_columns(blob, number)[0]
 
 
 def _jsonable(value: Any) -> Any:
@@ -239,7 +245,7 @@ class MessageDatabase:
                 values = dict(zip(columns, row, strict=True))
                 body = None
                 if decode and 40800 in values:
-                    inner = unwrap_column(values.get(40800), 40800)
-                    if inner:
-                        body = decode_message_body(inner)
+                    bodies = unwrap_columns(values.get(40800), 40800)
+                    if bodies:
+                        body = decode_message_bodies(bodies)
                 yield MessageRecord(table=table, columns=values, body=body)

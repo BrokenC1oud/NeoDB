@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ntqq import protobuf
 from ntqq.export import export_csv, export_html, export_jsonl, export_markdown
-from ntqq.message import Message, parse_elements, unwrap_body
+from ntqq.message import Message, decode_elements, parse_elements, unwrap_bodies, unwrap_body
 from ntqq.orm import DatabaseManager
 from ntqq.world import QQNT, repair_file
 
@@ -278,6 +278,33 @@ class MessageTests(Fixture):
         with QQNT(self.directory) as qq:
             self.assertIsInstance(next(iter(qq.messages(scope="c2c"))), Message)
 
+    def test_multi_segment_message_keeps_every_element(self) -> None:
+        """一条消息可以有多段消息体（正文、图片各占一个 ``40800``），不能只取第一段。"""
+        blob = pb_bytes(40800, pb_varint(45002, 2) + pb_text(45402, "a.png")) + pb_bytes(
+            40800, pb_varint(45002, 1) + pb_text(45101, "你好")
+        )
+        self.assertEqual(len(unwrap_bodies(blob)), 2)
+        elements = decode_elements(blob)
+        self.assertEqual([e.kind for e in elements], ["image", "text"])
+        self.assertEqual("".join(str(e) for e in elements), "[图片]你好")
+
+    def test_multi_segment_reply_keeps_every_quoted_element(self) -> None:
+        """被引用的消息同样可能是多段，引用要把它们合并解析。"""
+
+        def quoted(element_type: int, payload: bytes) -> bytes:
+            return pb_bytes(47423, pb_varint(45002, element_type) + payload)
+
+        fields = protobuf.decode_tree(
+            pb_varint(45002, 7)
+            + quoted(1, pb_text(45101, "被引用的正文"))
+            + quoted(2, pb_text(45402, "b.png"))
+        )
+        reply = parse_elements(fields)[0]
+        self.assertEqual(reply.kind, "reply")
+        self.assertIsNotNone(reply.quoted)
+        self.assertEqual([e.kind for e in reply.quoted.elements], ["text", "image"])
+        self.assertIn("被引用的正文", reply.quoted.text)
+
     def test_element_registry_keeps_raw_fields(self) -> None:
         elements = parse_elements(protobuf.decode_tree(unwrap_body(body(pb_text(45101, "x")))))
         self.assertEqual(elements[0].kind, "text")
@@ -312,8 +339,6 @@ class ElementRegistryTests(unittest.TestCase):
         self.assertEqual(undocumented, [], "注册表里有 ELEMENT_NAMES 未记录的类型")
 
     def test_menu_element(self) -> None:
-        """类型 43（内嵌按钮菜单）：应用 id、按钮 id 与按钮文字都要解出来。"""
-
         def button(button_id: str, label: str) -> bytes:
             return pb_bytes(48753, pb_text(48754, button_id) + pb_text(48755, label))
 

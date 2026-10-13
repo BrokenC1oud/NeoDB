@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, ClassVar
@@ -463,8 +463,8 @@ def _decode_face(fields: list[Field]) -> Element:
 
 
 def _decode_reply(fields: list[Field]) -> Element:
-    quoted_fields = _message(fields, 47423)
-    quoted = Message.from_body_fields(quoted_fields) if quoted_fields else None
+    groups = [f.message for f in fields if f.number == 47423 and f.message is not None]
+    quoted = Message.from_body_fields(groups) if groups else None
     return Reply(
         raw=fields,
         source_seq=_int(fields, 47402),
@@ -643,11 +643,18 @@ class Message:
 
     # -- 构造 -----------------------------------------------------------
     @classmethod
-    def from_body_fields(cls, fields: list[Field] | None) -> Message:
-        fields = fields or []
+    def from_body_fields(cls, groups: Sequence[list[Field]] | None = None) -> Message:
+        """从若干段已解析的元素字段构建消息（用于引用等内嵌场景）。
+
+        *groups* 的每一项是一段消息体的字段列表——被引用的正文、图片等各占
+        一段 ``47423``，实测约 22% 的引用不止一段。
+        """
+        groups = list(groups or [])
+        elements = [element for group in groups for element in parse_elements(group)]
+        first = groups[0] if groups else []
         return cls(
-            id=_int(fields, 45001),
-            elements=parse_elements(fields),
+            id=_int(first, 45001),
+            elements=elements,
             columns={},
             source="embed",
         )
@@ -668,14 +675,7 @@ class Message:
             return columns.get(number)
 
         body = column(body_field)
-        elements: list[Element] = []
-        if decode and isinstance(body, (bytes, bytearray)) and body:
-            inner = unwrap_body(bytes(body), body_field)
-            try:
-                fields = protobuf.decode_tree(inner)
-            except protobuf.ProtobufError:
-                fields = []
-            elements = parse_elements(fields)
+        elements: list[Element] = decode_elements(body, body_field) if decode else []
 
         return cls(
             id=column(40001),
@@ -772,19 +772,24 @@ class Message:
         return f"[{self.time_str}] {self.display_sender}: {self.text}"
 
 
-def unwrap_body(blob: bytes, field: int = 40800) -> bytes:
-    """QQ 把消息体包在一个以其列名命名的 protobuf 字段中。
+def unwrap_bodies(blob: bytes, field: int = 40800) -> list[bytes]:
+    """QQ 把消息体包在一个以其列名命名的 protobuf 字段中，且**一条消息可以有多段**。
 
-    ``40800`` 存放聊天消息，``40051`` 存放最近会话预览。
+    ``40800`` 存放聊天消息，``40051`` 存放最近会话预览。消息的正文、图片、
+    引用等各占一个 ``40800``（实测约 18% 的群消息不止一段），因此必须全部取出，
+    只取第一段会丢掉其余元素。
     """
     try:
         fields = protobuf.parse(blob)
     except protobuf.ProtobufError:
-        return blob
-    inner = protobuf.first(fields, field)
-    if inner is not None and inner.wire_type == protobuf.WIRE_LEN:
-        return inner.value
-    return blob
+        return [blob]
+    bodies = [f.value for f in fields if f.number == field and f.wire_type == protobuf.WIRE_LEN]
+    return bodies or [blob]
+
+
+def unwrap_body(blob: bytes, field: int = 40800) -> bytes:
+    """只取第一段消息体；需要全部分段请用 :func:`unwrap_bodies`。"""
+    return unwrap_bodies(blob, field)[0]
 
 
 def parse_elements(fields: list[Field] | None) -> list[Element]:
@@ -805,6 +810,24 @@ def parse_elements(fields: list[Field] | None) -> list[Element]:
                 error=f"{type(error).__name__}: {error}",
             )
         ]
+
+
+def decode_elements(blob: Any, field: int = 40800) -> list[Element]:
+    """把消息体列的原始字节解码为元素列表。
+
+    一条消息可能由多段组成（正文、图片、引用各一段），全部段都会被解析并
+    按原始顺序拼接，因此不会丢元素。
+    """
+    if not isinstance(blob, (bytes, bytearray)) or not blob:
+        return []
+    elements: list[Element] = []
+    for inner in unwrap_bodies(bytes(blob), field):
+        try:
+            fields = protobuf.decode_tree(inner)
+        except protobuf.ProtobufError:
+            continue
+        elements.extend(parse_elements(fields))
+    return elements
 
 
 def _body_fields(blob: Any) -> list[Field]:
