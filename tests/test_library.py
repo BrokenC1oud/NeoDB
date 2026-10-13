@@ -18,7 +18,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ntqq import protobuf
 from ntqq.export import export_csv, export_html, export_jsonl, export_markdown
-from ntqq.message import Message, decode_elements, parse_elements, unwrap_bodies, unwrap_body
+from ntqq.message import (
+    AT_MEMBER,
+    Message,
+    Text,
+    decode_elements,
+    parse_elements,
+    unwrap_bodies,
+    unwrap_body,
+)
 from ntqq.orm import DatabaseManager
 from ntqq.world import QQNT, repair_file
 
@@ -304,6 +312,39 @@ class MessageTests(Fixture):
         self.assertIsNotNone(reply.quoted)
         self.assertEqual([e.kind for e in reply.quoted.elements], ["text", "image"])
         self.assertIn("被引用的正文", reply.quoted.text)
+
+    def test_mention_types_and_plain_text(self) -> None:
+        """@ 提及：at_type 区分 @某人 / @全体 / 手打 @，plain() 按需去除。"""
+
+        def decode(payload: bytes) -> Text:
+            fields = protobuf.decode_tree(pb_varint(45002, 1) + payload)
+            element = parse_elements(fields)[0]
+            self.assertIsInstance(element, Text)
+            return element
+
+        member = decode(
+            pb_varint(45102, AT_MEMBER) + pb_text(45101, "@某人 你好") + pb_varint(45103, 44)
+        )
+        self.assertEqual(member.at_type, AT_MEMBER)
+        self.assertTrue(member.mentions)
+        self.assertEqual(member.plain(), " 你好")  # 不含空格的昵称，正则即可
+        self.assertEqual(member.plain({44: "某人"}), " 你好")
+        self.assertEqual(member.plain({"u_x": "某人"}), " 你好")  # 也可以传映射
+
+        spaced = decode(pb_varint(45102, AT_MEMBER) + pb_text(45101, "@某 人 你好"))
+        self.assertEqual(spaced.plain(), " 人 你好")  # 纯正则会切掉一半
+        self.assertEqual(spaced.plain({45: "某 人"}), " 你好")  # 名字精确匹配才干净
+
+        everyone = decode(pb_varint(45102, 1) + pb_text(45101, "@全体成员 开会"))
+        self.assertTrue(everyone.mentions_all)
+        self.assertEqual(everyone.plain(), " 开会")
+
+        typed_by_hand = decode(pb_text(45101, "@手打的 你好"))
+        self.assertFalse(typed_by_hand.mentions)  # at_type 为 0，不是真提及
+        self.assertEqual(typed_by_hand.plain(), "@手打的 你好")
+
+        plain_text = decode(pb_text(45101, "邮箱 a@b.com"))
+        self.assertEqual(plain_text.plain(), "邮箱 a@b.com")
 
     def test_element_registry_keeps_raw_fields(self) -> None:
         elements = parse_elements(protobuf.decode_tree(unwrap_body(body(pb_text(45101, "x")))))

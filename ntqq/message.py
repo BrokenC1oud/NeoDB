@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from collections.abc import Iterable, Sequence
+import re
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, ClassVar
@@ -51,6 +52,15 @@ ELEMENT_NAMES: dict[int, str] = {
     21: "call",
     43: "menu",
 }
+
+
+#: ``45102`` 的取值：@某人。
+AT_MEMBER = 2
+#: ``45102`` 的取值：@全体成员。
+AT_ALL = 1
+
+#: 兜底：去掉 ``@`` 加一段非空白文字（含空格的昵称请配合 ``plain(names=...)``）。
+_AT_PATTERN = re.compile(r"@[^\s@]+")
 
 
 def element_name(element_type: int | None) -> str:
@@ -130,17 +140,61 @@ class Element:
 
 @dataclass
 class Text(Element):
+    """文本元素。
+
+    ``content`` 是原始文本，@ 提及以**纯文本**形式写在其中（``"@昵称"``，
+    没有位置或长度标记），目标则记在 :attr:`at_uins`/:attr:`at_uids` 中；
+    :attr:`at_type` 说明这次 @ 的性质：``2`` 表示 @某人、``1`` 表示 @全体成员、
+    ``0`` 或缺失表示**没有提及**（此时文本里的 ``@`` 是发言人手打的，不应删除）。
+    """
+
     kind: ClassVar[str] = "text"
     content: str = ""
+    at_type: int | None = None
     at_uids: list[str] = dc_field(default_factory=list)
     at_uins: list[int] = dc_field(default_factory=list)
 
     def __str__(self) -> str:
         return self.content
 
+    @property
+    def mentions_all(self) -> bool:
+        """是否为 @全体成员。"""
+        return self.at_type == AT_ALL
+
+    @property
+    def mentions(self) -> bool:
+        """是否包含真正的 @ 提及（@某人 或 @全体成员）。"""
+        return self.at_type in (AT_MEMBER, AT_ALL)
+
+    def plain(self, names: Iterable[str] | Mapping[Any, str] = ()) -> str:
+        """去掉 @ 提及后的文本。
+
+        @ 目标只以 uin/uid 保存，而文本里写的是**发送时**的昵称，因此含空格的
+        昵称需要借助 *names* 精确匹配：直接传 :meth:`ntqq.QQNT.member_names` 的
+        映射，或一个名字集合都行（昵称被改过时匹配不到，会退化为按空白切分的
+        近似删除）；不含空格的昵称由兜底正则处理。
+
+        没有真正提及（``at_type`` 为 0 或缺失）时原样返回，避免误删正文里的 ``@``。
+        """
+        if not self.mentions:
+            return self.content
+        known = names.values() if isinstance(names, Mapping) else names
+        text = self.content
+        for name in sorted({n for n in known if n}, key=len, reverse=True):
+            text = text.replace("@" + name, "")
+        if self.mentions_all:
+            return text.replace("@全体成员", "")
+        return _AT_PATTERN.sub("", text)
+
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
-        data.update(content=self.content, at_uids=self.at_uids, at_uins=self.at_uins)
+        data.update(
+            content=self.content,
+            at_type=self.at_type,
+            at_uids=self.at_uids,
+            at_uins=self.at_uins,
+        )
         return data
 
 
@@ -412,6 +466,7 @@ def _decode_text(fields: list[Field]) -> Element:
     return Text(
         raw=fields,
         content=_text(fields, 45101) or "",
+        at_type=_int(fields, 45102),
         at_uids=[
             v.decode("utf-8", "replace")
             for v in _ints(fields).get(45105, [])

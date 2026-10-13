@@ -617,6 +617,23 @@ class QQNT:
         return out
 
     # -- 消息 -----------------------------------------------------------
+    def member_names(self, group: Group | int) -> dict[str | int, str]:
+        """群成员显示名映射（``uid`` 与 ``uin`` 都可作为键）。
+
+        @ 提及在文本里写的是**发送当时**的群名片/昵称，而本方法给的是当前值，
+        供 :meth:`ntqq.message.Text.plain` 精确匹配；成员改名或退群时可能对不上。
+        """
+        out: dict[str | int, str] = {}
+        for member in self.members(group):
+            name = member.get("card") or member.get("nickname")
+            if not name:
+                continue
+            if member.get("uid"):
+                out[member["uid"]] = name
+            if member.get("uin"):
+                out[member["uin"]] = name
+        return out
+
     def _message_tables(self, scope: str | None) -> list[tuple[str, Table]]:
         if scope and scope in MESSAGE_TABLES:
             names = [MESSAGE_TABLES[scope]]

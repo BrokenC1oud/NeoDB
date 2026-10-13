@@ -83,6 +83,24 @@ m.element("text")                 # 第一个文本元素，没有则 None
 除了 `kind == "text"` 还可取图片摘要（`Image.summary`）、文件名（`File.filename`）、
 红包/卡片文字（`Gift.title`、`Share.title`、`Ark.summary`）等。
 
+### 去掉 @ 提及
+
+@ 提及在 `content` 里是**纯文本**（`"@昵称"`，没有位置标记），目标只记在
+`at_uins`/`at_uids` 中，`at_type` 则标明性质：`2` = @某人、`1` = @全体成员、
+`0` 或缺失 = 没有提及（此时文本里的 `@` 是发言人手打的，不应删除）。
+
+```python
+element.at_type        # 2 / 1 / 0 / None
+element.mentions       # 是否真的 @ 了谁（@某人 或 @全体成员）
+element.plain()        # 去掉 @ 提及；不含空格的昵称由正则处理
+names = qq.member_names(group)     # {uid|uin: 群名片或昵称}
+element.plain(names)               # 含空格的昵称也能精确去除
+```
+
+昵称在文本里是**发送当时**的样子，而 `member_names()` 给的是当前值，成员改名或
+退群时匹配不到会退化为按空白切分的近似删除（例如 `"@Patchouli alcohol"` 只去掉
+`"@Patchouli"`）。
+
 为新类型 id 注册一个解码器只需一次调用：
 
 ```python
