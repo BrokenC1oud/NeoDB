@@ -441,7 +441,6 @@ class QQNT:
         profile: str | Path,
         key: bytes | str | None = None,
         *,
-        plain_dir: str | Path | None = None,
         cache: str | Path | None = None,
         repair: bool = True,
         writable: bool = False,
@@ -621,8 +620,6 @@ class QQNT:
     def _message_tables(self, scope: str | None) -> list[tuple[str, Table]]:
         if scope and scope in MESSAGE_TABLES:
             names = [MESSAGE_TABLES[scope]]
-        elif scope:
-            names = list(MESSAGE_TABLES.values())
         else:
             names = list(MESSAGE_TABLES.values())
         out = []
@@ -691,7 +688,6 @@ class QQNT:
         sender: Any = None,
         order: str = "asc",
         where: str | None = None,
-        decode: bool = True,
     ) -> Iterator[Message]:
         """迭代消息，可选地限定到单个会话/范围。
 
