@@ -507,6 +507,11 @@ def cmd_export_chat(args) -> int:
         if chat is None:
             print(f"unknown chat {args.chat!r}", file=sys.stderr)
             return 1
+        if args.limit:
+            print(
+                f"仅导出最新的 {args.limit:,} 条（--limit 0 可导出全部）",
+                file=sys.stderr,
+            )
         messages = qq.history(chat, limit=args.limit, since=args.since, until=args.until)
         title = args.title or chat.display_name
         output = args.output
@@ -601,7 +606,7 @@ def _add_library_commands(sub) -> None:
     p = sub.add_parser("history", help="打印某个会话的消息")
     source_arg(p)
     p.add_argument("chat", help="群 uin、好友 uin/uid 或名称片段")
-    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--limit", type=int, default=50, help="最多打印多少条；0 = 不限")
     p.add_argument("--since", help="例如 2025-09-01")
     p.add_argument("--until", help="例如 2025-09-30")
     p.add_argument("--order", choices=("asc", "desc"), default="asc")
@@ -628,7 +633,7 @@ def _add_library_commands(sub) -> None:
     p.add_argument("chat")
     p.add_argument("-o", "--output", required=True)
     p.add_argument("--format", choices=("html", "markdown", "csv", "jsonl"), default="html")
-    p.add_argument("--limit", type=int, default=100000)
+    p.add_argument("--limit", type=int, default=0, help="最多导出多少条；0 = 不限（默认）")
     p.add_argument("--since")
     p.add_argument("--until")
     p.add_argument("--title")
