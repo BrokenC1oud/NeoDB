@@ -1,0 +1,23 @@
+{
+  "_comment": "tools/get_db_key.py 输出的示例。将其复制为 recovered_keys.json 并填入你自己的值；该文件已被 gitignore，因为这些是机密。",
+  "cipher": {
+    "cipher": "AES-256-CBC",
+    "kdf": "PBKDF2-HMAC-SHA512",
+    "kdf_iter": 4000,
+    "page_size": 4096,
+    "page_hmac": "HMAC-SHA1（保留区 48 字节）；guild1.db 使用 HMAC-SHA512（保留区 80 字节）"
+  },
+  "databases": {
+    "~/.config/QQ/nt_qq_<profile>/nt_db": {
+      "passphrase": "<16 字节账号密钥，例如 114514+1919810?x>",
+      "bytes": 16,
+      "used_by": "此账号配置中的每个数据库（nt_msg.db、group_info.db、...）"
+    },
+    "~/.config/QQ/global/nt_db": {
+      "passphrase": "<20 字节登录密钥>",
+      "bytes": 20,
+      "used_by": "login.db（登录前的记账数据）"
+    }
+  },
+  "howto": "python -m ntqq decrypt <db> <out> --key '<口令>'"
+}

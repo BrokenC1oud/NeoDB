@@ -1,0 +1,40 @@
+# --- Python -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- secrets and user data --------------------------------------------
+# Recovered database keys (see tools/get_db_key.py).  Never commit these.
+tools/recovered_keys.json
+*.key
+
+# Decrypted databases and QQ's own files: they contain private chat data.
+work/
+*.db
+*.db-wal
+*.db-shm
+*-first.material
+*-last.material
+
+# --- build artefacts ---------------------------------------------------
+jdbc/lib/
+jdbc/build/
+jdbc/dist/
+
+# --- editors / IDEs ----------------------------------------------------
+# 编辑器/工具留下的临时备份，不属于源码
+*.bak
+*.orig
+*.rej
+*~
+.idea/
+.vscode/
+*.swp
