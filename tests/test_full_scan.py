@@ -69,13 +69,11 @@ class FullScanTests(unittest.TestCase):
         self.assertEqual(self.report.table_failures, {}, "有表读取失败")
 
     def test_no_decoder_crashed(self) -> None:
-        """元素解码器不得抛错（未知类型可以走兜底，但崩溃就是 bug）。"""
         self.assertEqual(
             self.report.decoder_errors, {}, f"解码器抛错：{self.report.decoder_errors}"
         )
 
     def test_unknown_element_types_are_reported(self) -> None:
-        """未支持的元素类型不算失败，但必须在报告里可见。"""
         if self.report.unsupported_types:
             print(
                 "\n未支持的元素类型（已按兜底渲染，原始字段仍在 raw 中）:",

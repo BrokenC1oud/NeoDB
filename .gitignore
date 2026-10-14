@@ -38,3 +38,6 @@ jdbc/dist/
 .idea/
 .vscode/
 *.swp
+
+messages.txt
+*.png
