@@ -175,17 +175,40 @@ class Text(Element):
         映射，或一个名字集合都行（昵称被改过时匹配不到，会退化为按空白切分的
         近似删除）；不含空格的昵称由兜底正则处理。
 
+        传入映射时只会按**本次 @ 的目标**（``at_uids``/``at_uins``）去查名字，
+        所以不会被同群更短的成员名截断——例如目标昵称从 ``"某某某（备注）"``
+        改成 ``"某某某（新名）"`` 后，也不会被某位叫 ``"某"`` 的成员切成
+        ``"某某（备注）"``。
+
         没有真正提及（``at_type`` 为 0 或缺失）时原样返回，避免误删正文里的 ``@``。
         """
         if not self.mentions:
             return self.content
-        known = names.values() if isinstance(names, Mapping) else names
         text = self.content
-        for name in sorted({n for n in known if n}, key=len, reverse=True):
-            text = text.replace("@" + name, "")
         if self.mentions_all:
-            return text.replace("@全体成员", "")
+            return _AT_PATTERN.sub("", text.replace("@全体成员", ""))
+        for name in self._mention_names(names):
+            text = text.replace("@" + name, "")
         return _AT_PATTERN.sub("", text)
+
+    def _mention_names(self, names: Iterable[str] | Mapping[Any, str]) -> list[str]:
+        """本次 @ 的目标在 *names* 中对应的显示名。
+
+        映射（``{uid|uin: 名字}``）会按 ``at_uids``/``at_uins`` 精确查目标；
+        元素没带目标信息时才退化为整个映射。传入的若只是名字集合，则无法定位
+        目标，只能逐个尝试。
+        """
+        keys = [*self.at_uids, *self.at_uins]
+        if isinstance(names, Mapping):
+            if not keys:  # 元素没有目标字段，只能尽力而为
+                return [n for n in names.values() if n]
+            found: list[str] = []
+            for key in keys:
+                name = names.get(key)
+                if name and name not in found:
+                    found.append(name)
+            return found
+        return [n for n in names if n]
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()

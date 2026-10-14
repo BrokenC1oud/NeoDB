@@ -335,6 +335,26 @@ class MessageTests(Fixture):
         self.assertEqual(spaced.plain(), " 人 你好")  # 纯正则会切掉一半
         self.assertEqual(spaced.plain({45: "某 人"}), " 你好")  # 名字精确匹配才干净
 
+        # 带目标字段（真实数据总是有）时按目标查名字，含空格也能删干净
+        spaced_target = decode(
+            pb_varint(45102, AT_MEMBER) + pb_text(45101, "@某 人 你好") + pb_varint(45103, 45)
+        )
+        self.assertEqual(spaced_target.plain({45: "某 人"}), " 你好")
+
+        # 回归：目标改名后，不得被同群更短的成员名截断
+        # （例：@某某某（备注） 被叫“某”的成员切成 某某（备注））
+        renamed = decode(
+            pb_varint(45102, AT_MEMBER) + pb_text(45101, "@某某某（备注）") + pb_varint(45103, 9001)
+        )
+        roster = {9001: "某某某（新名）", 9002: "某", 9003: "5"}
+        self.assertEqual(renamed.plain(roster), "")  # 匹配不到目标当前名，整段提及被兜底正则删掉
+        self.assertEqual(renamed.plain(), "")  # 不传映射时同样整段删掉
+        # 目标就叫单个字时也要按目标精确删除，而不是靠正则碰运气
+        greeting = decode(
+            pb_varint(45102, AT_MEMBER) + pb_text(45101, "@某 在吗") + pb_varint(45103, 9002)
+        )
+        self.assertEqual(greeting.plain(roster), " 在吗")
+
         everyone = decode(pb_varint(45102, 1) + pb_text(45101, "@全体成员 开会"))
         self.assertTrue(everyone.mentions_all)
         self.assertEqual(everyone.plain(), " 开会")
